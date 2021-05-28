@@ -1,0 +1,96 @@
+---
+title: "Glioblastoma multiforme and oligodendroglial glioma: neurospheres"
+author: "Marc Escobosa Olmo"
+date: "5/28/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(Biobase)
+library(GEOquery)
+library(limma)
+library(umap)
+library(methods)
+gset <- getGEO("GSE31545", GSEMatrix =TRUE, getGPL=FALSE)
+class(gset)
+names(gset)
+gset[[1]]
+```
+
+## Data Description
+
+# General Information
+  - Title: Glioblastoma multiforme and oligodendroglial glioma: neurospheres
+  - ID: 	GSE31545
+  - Sample size: 14
+  - Group size: 6
+  - Platform: GPL570: [HG-U133_Plus_2] Affymetrix Human Genome U133 Plus 2.0 Array
+  - Date of publication: 2012/06/03
+  - Target organism: Homo sapiens
+  
+# Summary
+From what the sampling refers they took RNA from neurosphere culture from brain tumor of 6 patients also replicate arrays were performed for all 6 neurosphere cultures.
+
+Brain tumors are among the most malignant cancers and can arise from neural stem cells or oligodendrocyte progenitor cells (OPCs). Glioma-propagating cells (GPCs) that have stem-like properties have been derived from tumor variants such as glioblastoma multiforme (GBM) and oligodendroglial tumors, the latter being more chemosensitive with better prognosis. It has been suggested that such differences in chemosensitivity arise from the different profiles of OPCs versus neural stem cells. Therefore they decided to explore if GPCs derived from these glioma variants could serve as reliable in vitro culture systems for studies. They also derived a gene signature distinguishing oligodendroglial GPCs from GBM GPCs collated from different studies, which was enriched for the Wnt, Notch and TGF-beta pathways. Using a novel method in glioma biology, the Connectivity Map, they mapped the strength of gene signature association with patient gene expression profiles in 2 independent glioma databases [GSE16011, http://caintegrator-info.nci.nih.gov/rembrandt]. 
+
+
+## Building expression matrix and Targets
+
+```{r}
+esetFromGEO <- gset[[1]]
+
+ex_Mat <- exprs(esetFromGEO) #expression matrix
+targets <- pData(esetFromGEO)[,41:42]
+targets
+```
+
+## Design and contrast Matrix
+```{r}
+design <- model.matrix(~0+targets$`histology:ch1`)
+rownames(design) <- targets$`patient:ch1`
+colnames(design) <- c("Anaplastic_Oligoastrocytoma","Glioblastoma_multiforme")
+design
+
+cont.matrix <- makeContrasts(AvsB = Anaplastic_Oligoastrocytoma-Glioblastoma_multiforme,levels = design)
+cont.matrix  
+```
+
+## Analysis and volcano plot
+```{r}
+
+fit <- lmFit(esetFromGEO, design)
+fit.main<-contrasts.fit(fit, cont.matrix)
+fit.main<-eBayes(fit.main)
+fit.main
+
+topTab_AvsB <- topTable (fit.main, number=nrow(fit.main), coef="AvsB", adjust="fdr") 
+head(topTab_AvsB)
+volcanoplot(fit.main, coef=1, highlight=4, 
+            main=paste("Differentially expressed genes", colnames(cont.matrix)[1], sep="\n"))
+abline(v=c(-1,1))
+```
+
+##Aditional Plots
+```{r}
+# log2 transform
+qx <- as.numeric(quantile(ex_Mat, c(0., 0.25, 0.5, 0.75, 0.99, 1.0), na.rm=T))
+LogC <- (qx[5] > 100) ||
+  (qx[6]-qx[1] > 50 && qx[2] > 0)
+if (LogC) { ex[which(ex <= 0)] <- NaN
+ex <- log2(ex) }
+
+# box-and-whisker plot
+par(mar=c(7,4,2,1))
+title <- paste ("GSE31545", "/", annotation(gset$GSE31545_series_matrix.txt.gz), sep ="")
+boxplot(ex_Mat, boxwex=0.7, notch=T, main=title, outline=FALSE, las=2)
+
+# expression value distribution plot
+par(mar=c(4,4,2,1))
+title <- paste ("GSE31545", "/", annotation(gset$GSE31545_series_matrix.txt.gz), " value distribution", sep ="")
+plotDensities(ex_Mat, main=title, legend=F)
+
+# mean-variance trend
+ex <- na.omit(ex_Mat) # eliminate rows with NAs
+plotSA(lmFit(ex), main="Mean variance trend, GSE31545")
+```
